@@ -5,6 +5,8 @@ void zstd_ruby_init(void);
 void zstd_ruby_skippable_frame_init(void);
 void zstd_ruby_streaming_compress_init(void);
 void zstd_ruby_streaming_decompress_init(void);
+void zstd_ruby_dictionary_compress_init(void);
+void zstd_ruby_dictionary_decompress_init(void);
 
 void
 Init_zstdruby(void)
@@ -18,4 +20,6 @@ Init_zstdruby(void)
   zstd_ruby_skippable_frame_init();
   zstd_ruby_streaming_compress_init();
   zstd_ruby_streaming_decompress_init();
+  zstd_ruby_dictionary_compress_init();
+  zstd_ruby_dictionary_decompress_init();
 }
