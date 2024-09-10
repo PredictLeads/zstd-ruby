@@ -2,7 +2,7 @@
 
 struct simple_compress_t {
     ZSTD_CCtx* cctx;
-    ZSTD_CCtx* dctx;
+    ZSTD_DCtx* dctx;
 };
 
 static void
@@ -17,13 +17,13 @@ simple_compress_free(void *p)
     struct simple_compress_t *sc = p;
 
     ZSTD_CCtx* cctx = sc->cctx;
-    if (ctx != NULL) {
+    if (cctx != NULL) {
         ZSTD_freeCCtx(cctx);
     }
 
     ZSTD_DCtx* dctx = sc->dctx;
     if (dctx != NULL) {
-        ZSTD_freeCCtx(dctx);
+        ZSTD_freeDCtx(dctx);
     }
 
     xfree(sc);
@@ -72,22 +72,56 @@ static VALUE
 rb_simple_compress_initialize(int argc, VALUE *argv, VALUE obj)
 {
     VALUE kwargs;
-    VALUE compression_level_value;
     rb_scan_args(argc, argv, "00:", &kwargs);
 
     struct simple_compress_t* sc;
     TypedData_Get_Struct(obj, struct simple_compress_t, &simple_compress_type, sc);
 
-    ZSTD_CCtx* const ctx = ZSTD_createCCtx();
-    if (ctx == NULL) {
+    // Build (de)compress contexts
+
+    ZSTD_CCtx* const cctx = ZSTD_createCCtx();
+    if (cctx == NULL) {
         rb_raise(rb_eRuntimeError, "%s", "ZSTD_createCCtx error");
     }
 
-    sc->ctx = ctx;
+    sc->cctx = cctx;
 
-    compression_level_value = Qnil;
+    ZSTD_DCtx* const dctx = ZSTD_createDCtx();
+    if (dctx == NULL) {
+        rb_raise(rb_eRuntimeError, "%s", "ZSTD_createDCtx error");
+    }
 
-    set_compress_params(ctx, compression_level_value, kwargs);
+    sc->dctx = dctx;
+
+    // Apply compression level and dictionary
+
+    ID kwargs_keys[2];
+    kwargs_keys[0] = rb_intern("level");
+    kwargs_keys[1] = rb_intern("dict");
+    VALUE kwargs_values[2];
+    rb_get_kwargs(kwargs, kwargs_keys, 0, 2, kwargs_values);
+
+    int compression_level = ZSTD_CLEVEL_DEFAULT;
+    if (kwargs_values[0] != Qundef && kwargs_values[0] != Qnil) {
+        compression_level = convert_compression_level(kwargs_values[0]);
+    }
+
+    ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, compression_level);
+
+    if (kwargs_values[1] != Qundef && kwargs_values[1] != Qnil) {
+        char* dict_buffer = RSTRING_PTR(kwargs_values[1]);
+        size_t dict_size = RSTRING_LEN(kwargs_values[1]);
+
+        size_t load_cdict_ret = ZSTD_CCtx_loadDictionary(cctx, dict_buffer, dict_size);
+        if (ZSTD_isError(load_cdict_ret)) {
+            rb_raise(rb_eRuntimeError, "%s", "ZSTD_CCtx_loadDictionary failed");
+        }
+
+        size_t load_ddict_ret = ZSTD_DCtx_loadDictionary(dctx, dict_buffer, dict_size);
+        if (ZSTD_isError(load_ddict_ret)) {
+            rb_raise(rb_eRuntimeError, "%s", "ZSTD_DCtx_loadDictionary failed");
+        }
+    }
 
     return obj;
 }
@@ -131,13 +165,11 @@ static VALUE decompress_buffered(ZSTD_DCtx* dctx, const char* input_data, size_t
 
     size_t ret = zstd_stream_decompress(dctx, &output, &input, false);
     if (ZSTD_isError(ret)) {
-      ZSTD_freeDCtx(dctx);
       rb_raise(rb_eRuntimeError, "%s: %s", "ZSTD_decompressStream failed", ZSTD_getErrorName(ret));
     }
     rb_str_cat(result, output.dst, output.pos);
     RB_GC_GUARD(output_string);
   }
-  ZSTD_freeDCtx(dctx);
   return result;
 }
 

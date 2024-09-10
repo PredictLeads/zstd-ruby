@@ -49,6 +49,14 @@ compressed_data = Zstd.compress(data, level: complession_level) # default compre
 compressed_using_dict = Zstd.compress("", dict: File.read('dictionary_file'))
 ```
 
+#### Keep dictionary loaded
+```ruby
+de_compressor = Zstd::SimpleCompress.new(dict: File.read('dictionary_file'))
+
+compressed_string = de_compressor.compress("abc")
+decompressed_string = de_compressor.decompress(compressed_string)
+```
+
 #### Streaming Compression
 ```ruby
 stream = Zstd::StreamingCompress.new
